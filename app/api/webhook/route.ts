@@ -132,6 +132,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    console.log(request, headers())
     // Verify webhook signature
     const signature = headers().get('x-hub-signature-256');
     if (!signature) {
