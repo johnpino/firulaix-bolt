@@ -44,23 +44,15 @@ const WhatsAppMessageSchema = z.object({
             sha256: z.string(),
             id: z.string(),
           }).optional(),
+          location: z.object({
+            latitude: z.number(),
+            longitude: z.number(),
+          }).optional(),
+          voice: z.object({}).optional(),
         })),
       }),
     })),
   })),
-});
-
-// Report information schema
-const ReportInfo = z.object({
-  type: z.enum(['dog', 'cat', 'other']),
-  description: z.string(),
-  location: z.object({
-    lat: z.number(),
-    lng: z.number(),
-  }).optional(),
-  imageUrl: z.string().optional(),
-  isComplete: z.boolean(),
-  nextQuestion: z.string(),
 });
 
 // Verify WhatsApp webhook signature
@@ -109,6 +101,59 @@ async function sendWhatsAppMessage(to: string, message: string) {
   return response.json();
 }
 
+// Get media URL from WhatsApp
+async function getMediaUrl(mediaId: string): Promise<string> {
+  const response = await fetch(
+    `https://graph.facebook.com/v17.0/${mediaId}`,
+    {
+      headers: {
+        'Authorization': `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+      },
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error('Failed to get media URL');
+  }
+
+  const data = await response.json();
+  return data.url;
+}
+
+// Download media from WhatsApp
+async function downloadMedia(url: string): Promise<string> {
+  const response = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to download media');
+  }
+
+  // Upload to Supabase Storage and get public URL
+  const buffer = await response.arrayBuffer();
+  const fileName = `${Date.now()}.jpg`;
+  const { data, error } = await supabase.storage
+    .from('animal-images')
+    .upload(fileName, buffer, {
+      contentType: 'image/jpeg',
+      cacheControl: '3600',
+      upsert: false,
+    });
+
+  if (error) {
+    throw error;
+  }
+
+  const { data: { publicUrl } } = supabase.storage
+    .from('animal-images')
+    .getPublicUrl(fileName);
+
+  return publicUrl;
+}
+
 // Fetch recent conversation history
 async function getConversationHistory(senderId: string) {
   const { data, error } = await supabase
@@ -132,19 +177,20 @@ async function getConversationHistory(senderId: string) {
 }
 
 // Create a new report in Supabase
-async function createReport(reportInfo: z.infer<typeof ReportInfo>) {
-  if (!reportInfo.isComplete) {
-    return null;
-  }
-
+async function createReport(
+  type: string,
+  description: string,
+  location: { lat: number; lng: number },
+  imageUrl: string
+) {
   const { data, error } = await supabase
     .from('reports')
     .insert({
-      type: reportInfo.type,
-      description: reportInfo.description,
-      lat: reportInfo.location?.lat || 0,
-      lng: reportInfo.location?.lng || 0,
-      image_url: reportInfo.imageUrl || 'https://images.pexels.com/photos/2023384/pexels-photo-2023384.jpeg',
+      type,
+      description,
+      lat: location.lat,
+      lng: location.lng,
+      image_url: imageUrl,
       status: 'active',
       timestamp: new Date().toISOString(),
     })
@@ -158,6 +204,41 @@ async function createReport(reportInfo: z.infer<typeof ReportInfo>) {
 
   return data;
 }
+
+// OpenAI function definitions
+const functions = [
+  {
+    name: 'create_report',
+    description: 'Create a new report for an animal in need',
+    parameters: {
+      type: 'object',
+      properties: {
+        type: {
+          type: 'string',
+          enum: ['dog', 'cat', 'other'],
+          description: 'Type of animal',
+        },
+        description: {
+          type: 'string',
+          description: 'Description of the situation',
+        },
+        location: {
+          type: 'object',
+          properties: {
+            lat: { type: 'number' },
+            lng: { type: 'number' },
+          },
+          required: ['lat', 'lng'],
+        },
+        imageUrl: {
+          type: 'string',
+          description: 'URL of the image',
+        },
+      },
+      required: ['type', 'description', 'location', 'imageUrl'],
+    },
+  },
+];
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -183,7 +264,7 @@ export async function POST(request: Request) {
 
     const body = await request.text();
 
-    if (!verifySignature(body, signature.replace('sha256=', ''))) {
+    if (!verifySignature(body, signature)) {
       return new NextResponse('Invalid signature', { status: 401 });
     }
 
@@ -192,39 +273,56 @@ export async function POST(request: Request) {
     const message = payload.entry[0].changes[0].value.messages[0];
     const sender = payload.entry[0].changes[0].value.contacts[0];
 
-    // Extract message content
-    const messageContent = message.text?.body || 'Media message received';
-    
+    // Handle voice messages
+    if (message.type === 'voice') {
+      await sendWhatsAppMessage(
+        sender.wa_id,
+        "I'm sorry, but I can't process voice messages at the moment. Please send text, images, or location instead."
+      );
+      return new NextResponse('OK', { status: 200 });
+    }
+
+    // Extract message content and media
+    let messageContent = '';
+    let imageUrl: string | undefined;
+    let location: { lat: number; lng: number } | undefined;
+
+    if (message.text) {
+      messageContent = message.text.body;
+    }
+
+    if (message.image) {
+      const mediaUrl = await getMediaUrl(message.image.id);
+      imageUrl = await downloadMedia(mediaUrl);
+      messageContent += ` [Image uploaded: ${imageUrl}]`;
+    }
+
+    if (message.location) {
+      location = {
+        lat: message.location.latitude,
+        lng: message.location.longitude,
+      };
+      messageContent += ` [Location: ${location.lat}, ${location.lng}]`;
+    }
+
     // Get conversation history
     const conversationHistory = await getConversationHistory(sender.wa_id);
 
-    // Process message with OpenAI, including conversation history
+    // Process message with OpenAI
     const completion = await openai.chat.completions.create({
       model: "gpt-4-turbo-preview",
       messages: [
         {
           role: "system",
-          content: `You are an AI assistant helping users report animals in need. Extract information to create a report with the following details:
-- Type of animal (dog, cat, or other)
-- Description of the situation
-- Location (latitude and longitude)
-- Image URL (optional)
-
-Ask questions one at a time to gather missing information. Once all required information is collected, create a report.
-
-Format your response as valid JSON matching this schema:
-{
-  "type": "dog" | "cat" | "other",
-  "description": string,
-  "location": { "lat": number, "lng": number } | null,
-  "imageUrl": string | null,
-  "isComplete": boolean,
-  "nextQuestion": string
-}
-
-Set isComplete to true only when all required information is gathered.
-Include the next question to ask in nextQuestion.
-Previous answers should influence future questions.`
+          content: `You are an AI assistant helping users report animals in need. You should:
+1. Collect information about the animal (type, description, location, and image)
+2. Ask for missing information one question at a time
+3. Once you have all required information, call the create_report function
+4. Be friendly and empathetic
+5. Keep responses concise and clear
+6. If the user sends an image, acknowledge it
+7. If the user sends a location, acknowledge it
+8. If information is missing, ask for it specifically`
         },
         ...conversationHistory,
         {
@@ -232,25 +330,35 @@ Previous answers should influence future questions.`
           content: messageContent
         }
       ],
-      response_format: { type: "json_object" },
+      tools: functions,
     });
 
-    const aiResponse = completion.choices[0].message.content;
-    const reportInfo = ReportInfo.parse(JSON.parse(aiResponse));
+    const aiResponse = completion.choices[0].message;
+    let responseToUser = aiResponse.content || '';
 
-    // If report is complete, create it in the database
-    if (reportInfo.isComplete) {
-      const report = await createReport(reportInfo);
-      if (report) {
-        await sendWhatsAppMessage(
-          sender.wa_id,
-          "Thank you for reporting! We've recorded the information and will help the animal as soon as possible."
-        );
+    // Handle function calls
+    if (aiResponse.tool_calls) {
+      for (const toolCall of aiResponse.tool_calls) {
+        if (toolCall.function.name === 'create_report') {
+          const args = JSON.parse(toolCall.function.arguments);
+          const report = await createReport(
+            args.type,
+            args.description,
+            args.location,
+            args.imageUrl
+          );
+
+          if (report) {
+            responseToUser = "Thank you for reporting! We've recorded the information and will help the animal as soon as possible.";
+          } else {
+            responseToUser = "I'm sorry, but there was an error creating the report. Please try again.";
+          }
+        }
       }
-    } else {
-      // Ask the next question
-      await sendWhatsAppMessage(sender.wa_id, reportInfo.nextQuestion);
     }
+
+    // Send response to user
+    await sendWhatsAppMessage(sender.wa_id, responseToUser);
 
     // Store in Supabase
     const { error: dbError } = await supabase
@@ -261,7 +369,7 @@ Previous answers should influence future questions.`
         message: messageContent,
         message_type: message.type,
         timestamp: new Date(parseInt(message.timestamp) * 1000).toISOString(),
-        ai_response: reportInfo.nextQuestion,
+        ai_response: responseToUser,
       });
 
     if (dbError) {
