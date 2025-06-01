@@ -92,7 +92,8 @@ async function sendWhatsAppMessage(to: string, message: string) {
     }
   );
 
-  console.log('Response', response, response.json())
+  const data = response.json()
+  console.log('Response', response, data)
 
   if (!response.ok) {
     throw new Error('Failed to send WhatsApp message');
