@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { headers } from 'next/headers';
-import { createHash, timingSafeEqual } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 import OpenAI from 'openai';
 import { z } from 'zod';
 import { supabase } from '@/lib/supabase';
