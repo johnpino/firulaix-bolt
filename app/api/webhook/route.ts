@@ -123,7 +123,7 @@ export async function GET(request: Request) {
   const token = searchParams.get('hub.verify_token');
   const challenge = searchParams.get('hub.challenge');
 
-  if (mode === 'subscribe' && token === process.env.WHATSAPP_WEBHOOK_SECRET) {
+  if (mode === 'subscribe' && token === process.env.WHATSAPP_WEBHOOK_VERIFICATION_TOKEN) {
     return new NextResponse(challenge);
   }
 
