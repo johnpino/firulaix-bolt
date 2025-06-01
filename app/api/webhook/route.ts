@@ -63,6 +63,8 @@ function verifySignature(payload: string, signature: string): boolean {
   const sigBuf = Buffer.from(incomingHex, 'hex');
   const hmacBuf = Buffer.from(expectedHex, 'hex');
 
+  console.log(sigBuf, hmacBuf)
+
   if (sigBuf.length !== hmacBuf.length) {
     return false;
   }
