@@ -92,7 +92,7 @@ async function sendWhatsAppMessage(to: string, message: string) {
     }
   );
 
-  const data = response.json()
+  const data = await response.json()
   console.log('Response', response, data)
 
   if (!response.ok) {
