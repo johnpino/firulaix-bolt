@@ -206,36 +206,39 @@ async function createReport(
 }
 
 // OpenAI function definitions
-const functions = [
+const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
-    name: 'create_report',
-    description: 'Create a new report for an animal in need',
-    parameters: {
-      type: 'object',
-      properties: {
-        type: {
-          type: 'string',
-          enum: ['dog', 'cat', 'other'],
-          description: 'Type of animal',
-        },
-        description: {
-          type: 'string',
-          description: 'Description of the situation',
-        },
-        location: {
-          type: 'object',
-          properties: {
-            lat: { type: 'number' },
-            lng: { type: 'number' },
+    type: 'function',
+    function: {
+      name: 'create_report',
+      description: 'Create a new report for an animal in need',
+      parameters: {
+        type: 'object',
+        properties: {
+          type: {
+            type: 'string',
+            enum: ['dog', 'cat', 'other'],
+            description: 'Type of animal',
           },
-          required: ['lat', 'lng'],
+          description: {
+            type: 'string',
+            description: 'Description of the situation',
+          },
+          location: {
+            type: 'object',
+            properties: {
+              lat: { type: 'number' },
+              lng: { type: 'number' },
+            },
+            required: ['lat', 'lng'],
+          },
+          imageUrl: {
+            type: 'string',
+            description: 'URL of the image',
+          },
         },
-        imageUrl: {
-          type: 'string',
-          description: 'URL of the image',
-        },
+        required: ['type', 'description', 'location', 'imageUrl'],
       },
-      required: ['type', 'description', 'location', 'imageUrl'],
     },
   },
 ];
@@ -330,7 +333,7 @@ export async function POST(request: Request) {
           content: messageContent
         }
       ],
-      tools: functions,
+      tools,
     });
 
     const aiResponse = completion.choices[0].message;
