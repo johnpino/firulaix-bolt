@@ -56,6 +56,8 @@ function verifySignature(payload: string, signature: string): boolean {
     .update(process.env.WHATSAPP_WEBHOOK_SECRET!)
     .update(payload)
     .digest('hex');
+
+  console.log(hmac, signature)
   
   try {
     return timingSafeEqual(
