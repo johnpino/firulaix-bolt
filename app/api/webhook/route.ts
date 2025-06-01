@@ -52,21 +52,22 @@ const WhatsAppMessageSchema = z.object({
 
 // Verify WhatsApp webhook signature
 function verifySignature(payload: string, signature: string): boolean {
-  const hmac = createHash('sha256')
-    .update(process.env.WHATSAPP_WEBHOOK_SECRET!)
+  // If the header is “sha256=<hex>”, strip the “sha256=” part:
+  const [, incomingHex] = signature.match(/^sha256=(.+)$/) || [ , signature ];
+
+  const secret = process.env.WHATSAPP_WEBHOOK_SECRET!;
+  const expectedHex = createHmac('sha256', secret)
     .update(payload)
     .digest('hex');
 
-  console.log(hmac, signature)
-  
-  try {
-    return timingSafeEqual(
-      Buffer.from(signature),
-      Buffer.from(hmac)
-    );
-  } catch {
+  const sigBuf = Buffer.from(incomingHex, 'hex');
+  const hmacBuf = Buffer.from(expectedHex, 'hex');
+
+  if (sigBuf.length !== hmacBuf.length) {
     return false;
   }
+
+  return timingSafeEqual(sigBuf, hmacBuf);
 }
 
 // Send message back to WhatsApp
