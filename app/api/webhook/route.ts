@@ -132,14 +132,17 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    console.log(request, headers())
+    
     // Verify webhook signature
     const signature = headers().get('x-hub-signature-256');
+
+    console.log(request, signature)
     if (!signature) {
       return new NextResponse('Signature required', { status: 401 });
     }
 
     const body = await request.text();
+    console.log(body)
     if (!verifySignature(body, signature.replace('sha256=', ''))) {
       return new NextResponse('Invalid signature', { status: 401 });
     }
