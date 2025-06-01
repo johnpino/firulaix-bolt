@@ -50,9 +50,21 @@ const WhatsAppMessageSchema = z.object({
   })),
 });
 
+// Report information schema
+const ReportInfo = z.object({
+  type: z.enum(['dog', 'cat', 'other']),
+  description: z.string(),
+  location: z.object({
+    lat: z.number(),
+    lng: z.number(),
+  }).optional(),
+  imageUrl: z.string().optional(),
+  isComplete: z.boolean(),
+  nextQuestion: z.string(),
+});
+
 // Verify WhatsApp webhook signature
 function verifySignature(payload: string, signature: string): boolean {
-  // If the header is “sha256=<hex>”, strip the “sha256=” part:
   const [, incomingHex] = signature.match(/^sha256=(.+)$/) || [ , signature ];
 
   const secret = process.env.WHATSAPP_WEBHOOK_SECRET!;
@@ -111,13 +123,40 @@ async function getConversationHistory(senderId: string) {
     return [];
   }
 
-  // Convert to OpenAI message format, in chronological order
   return data
     .reverse()
     .flatMap(msg => [
       { role: 'user' as const, content: msg.message },
       { role: 'assistant' as const, content: msg.ai_response }
     ]);
+}
+
+// Create a new report in Supabase
+async function createReport(reportInfo: z.infer<typeof ReportInfo>) {
+  if (!reportInfo.isComplete) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from('reports')
+    .insert({
+      type: reportInfo.type,
+      description: reportInfo.description,
+      lat: reportInfo.location?.lat || 0,
+      lng: reportInfo.location?.lng || 0,
+      image_url: reportInfo.imageUrl || 'https://images.pexels.com/photos/2023384/pexels-photo-2023384.jpeg',
+      status: 'active',
+      timestamp: new Date().toISOString(),
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error creating report:', error);
+    return null;
+  }
+
+  return data;
 }
 
 export async function GET(request: Request) {
@@ -135,7 +174,6 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    
     // Verify webhook signature
     const signature = headers().get('x-hub-signature-256');
 
@@ -154,8 +192,6 @@ export async function POST(request: Request) {
     const message = payload.entry[0].changes[0].value.messages[0];
     const sender = payload.entry[0].changes[0].value.contacts[0];
 
-    console.log('Payload', JSON.stringify(payload))
-
     // Extract message content
     const messageContent = message.text?.body || 'Media message received';
     
@@ -168,7 +204,27 @@ export async function POST(request: Request) {
       messages: [
         {
           role: "system",
-          content: "You are a helpful assistant for a street animal rescue organization. Help users report and get information about animals in need. Maintain context from previous messages to provide more relevant and personalized responses."
+          content: `You are an AI assistant helping users report animals in need. Extract information to create a report with the following details:
+- Type of animal (dog, cat, or other)
+- Description of the situation
+- Location (latitude and longitude)
+- Image URL (optional)
+
+Ask questions one at a time to gather missing information. Once all required information is collected, create a report.
+
+Format your response as valid JSON matching this schema:
+{
+  "type": "dog" | "cat" | "other",
+  "description": string,
+  "location": { "lat": number, "lng": number } | null,
+  "imageUrl": string | null,
+  "isComplete": boolean,
+  "nextQuestion": string
+}
+
+Set isComplete to true only when all required information is gathered.
+Include the next question to ask in nextQuestion.
+Previous answers should influence future questions.`
         },
         ...conversationHistory,
         {
@@ -176,9 +232,25 @@ export async function POST(request: Request) {
           content: messageContent
         }
       ],
+      response_format: { type: "json_object" },
     });
 
     const aiResponse = completion.choices[0].message.content;
+    const reportInfo = ReportInfo.parse(JSON.parse(aiResponse));
+
+    // If report is complete, create it in the database
+    if (reportInfo.isComplete) {
+      const report = await createReport(reportInfo);
+      if (report) {
+        await sendWhatsAppMessage(
+          sender.wa_id,
+          "Thank you for reporting! We've recorded the information and will help the animal as soon as possible."
+        );
+      }
+    } else {
+      // Ask the next question
+      await sendWhatsAppMessage(sender.wa_id, reportInfo.nextQuestion);
+    }
 
     // Store in Supabase
     const { error: dbError } = await supabase
@@ -189,15 +261,12 @@ export async function POST(request: Request) {
         message: messageContent,
         message_type: message.type,
         timestamp: new Date(parseInt(message.timestamp) * 1000).toISOString(),
-        ai_response: aiResponse,
+        ai_response: reportInfo.nextQuestion,
       });
 
     if (dbError) {
       console.error('Database error:', dbError);
     }
-
-    // Send response back to user
-    await sendWhatsAppMessage(sender.wa_id, aiResponse || 'Sorry, I could not process your message.');
 
     return new NextResponse('OK', { status: 200 });
   } catch (error) {
