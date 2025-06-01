@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary: 20 100% 50%;
+  --primary-foreground: 0 0% 98%;
+  --background: 30 25% 98%;
+  --foreground: 20 50% 20%;
+  --muted: 20 20% 92%;
+  --muted-foreground: 20 40% 40%;
+  --border: 20 30% 90%;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
