@@ -206,7 +206,7 @@ async function createReport(
 }
 
 // OpenAI function definitions
-const tools = [
+const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: 'function',
     function: {
