@@ -156,8 +156,6 @@ export async function POST(request: Request) {
 
     console.log('Payload', JSON.stringify(payload))
 
-    return new NextResponse('OK', { status: 200 });
-
     // Extract message content
     const messageContent = message.text?.body || 'Media message received';
     
