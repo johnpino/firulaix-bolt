@@ -154,7 +154,8 @@ export async function POST(request: Request) {
     const message = payload.entry[0].changes[0].value.messages[0];
     const sender = payload.entry[0].changes[0].value.contacts[0];
 
-    console.log('Payload', payload)
+    console.log('Payload', payload.entry[0].changes[0].value.messages)
+    console.log('Payload', payload.entry[0].changes[0].value.contacts)
 
     return new NextResponse('OK', { status: 200 });
 
