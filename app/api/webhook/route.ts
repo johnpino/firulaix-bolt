@@ -10,6 +10,9 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+// Maximum number of previous messages to include for context
+const MAX_CONTEXT_MESSAGES = 10;
+
 // Webhook payload validation schema
 const WhatsAppMessageSchema = z.object({
   object: z.string(),
@@ -91,6 +94,29 @@ async function sendWhatsAppMessage(to: string, message: string) {
   return response.json();
 }
 
+// Fetch recent conversation history
+async function getConversationHistory(senderId: string) {
+  const { data, error } = await supabase
+    .from('whatsapp_messages')
+    .select('message, ai_response, timestamp')
+    .eq('sender_id', senderId)
+    .order('timestamp', { ascending: false })
+    .limit(MAX_CONTEXT_MESSAGES);
+
+  if (error) {
+    console.error('Error fetching conversation history:', error);
+    return [];
+  }
+
+  // Convert to OpenAI message format, in chronological order
+  return data
+    .reverse()
+    .flatMap(msg => [
+      { role: 'user' as const, content: msg.message },
+      { role: 'assistant' as const, content: msg.ai_response }
+    ]);
+}
+
 export async function POST(request: Request) {
   try {
     // Verify webhook signature
@@ -112,14 +138,18 @@ export async function POST(request: Request) {
     // Extract message content
     const messageContent = message.text?.body || 'Media message received';
     
-    // Process message with OpenAI
+    // Get conversation history
+    const conversationHistory = await getConversationHistory(sender.wa_id);
+
+    // Process message with OpenAI, including conversation history
     const completion = await openai.chat.completions.create({
       model: "gpt-4-turbo-preview",
       messages: [
         {
           role: "system",
-          content: "You are a helpful assistant for a street animal rescue organization. Help users report and get information about animals in need."
+          content: "You are a helpful assistant for a street animal rescue organization. Help users report and get information about animals in need. Maintain context from previous messages to provide more relevant and personalized responses."
         },
+        ...conversationHistory,
         {
           role: "user",
           content: messageContent
