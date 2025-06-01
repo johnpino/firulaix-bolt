@@ -44,6 +44,38 @@ export interface Database {
           created_at?: string
         }
       }
+      whatsapp_messages: {
+        Row: {
+          id: string
+          sender_id: string
+          sender_name: string
+          message: string
+          message_type: string
+          timestamp: string
+          ai_response: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          sender_id: string
+          sender_name: string
+          message: string
+          message_type: string
+          timestamp: string
+          ai_response: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          sender_id?: string
+          sender_name?: string
+          message?: string
+          message_type?: string
+          timestamp?: string
+          ai_response?: string
+          created_at?: string
+        }
+      }
     }
     Views: {
       [_ in never]: never
