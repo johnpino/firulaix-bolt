@@ -135,6 +135,7 @@ async function downloadMedia(url: string): Promise<string> {
   // Upload to Supabase Storage and get public URL
   const buffer = await response.arrayBuffer();
   const fileName = `${Date.now()}.jpg`;
+  console.log('fileName', fileName)
   const { data, error } = await supabase.storage
     .from('animal-images')
     .upload(fileName, buffer, {
