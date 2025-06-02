@@ -34,7 +34,7 @@ const WhatsAppMessageSchema = z.object({
                 }),
                 wa_id: z.string(),
               })
-            ).nonempty(),
+            ).optional(),
             messages: z.array(
               z.object({
                 from: z.string(),
@@ -61,7 +61,7 @@ const WhatsAppMessageSchema = z.object({
                   .optional(),
                 voice: z.object({}).optional(),
               })
-            ).nonempty(),
+            ).optional(),
           }),
         })
       ).nonempty(),
