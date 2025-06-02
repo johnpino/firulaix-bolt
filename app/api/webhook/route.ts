@@ -294,15 +294,17 @@ export async function POST(request: Request) {
       messageContent = message.text.body;
     }
 
-    console.log('message.immage', message.image)
+    console.log('message.image', message.image)
 
     if (message.image) {
       const mediaUrl = await getMediaUrl(message.image.id);
+      console.log('mediaUrl', mediaUrl)
       imageUrl = await downloadMedia(mediaUrl);
+      console.log('imageUrl', imageUrl)
       messageContent += ` [Image uploaded: ${imageUrl}]`;
     }
 
-    console.log('message.immage procesado')
+    console.log('message.image procesado')
 
     if (message.location) {
       location = {
