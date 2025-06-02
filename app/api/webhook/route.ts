@@ -413,7 +413,6 @@ export async function POST(request: Request) {
               {
                 role: "tool",
                 tool_call_id: toolCall.id,
-                name: "create_report",
                 content: report ? JSON.stringify(report) : "error"
               }
             ]
