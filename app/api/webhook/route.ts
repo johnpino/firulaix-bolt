@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { headers } from 'next/headers';
 import { createHmac, timingSafeEqual, randomBytes } from 'crypto';
 import OpenAI from 'openai';
+import { z } from 'zod';
 import { supabase } from '@/lib/supabase';
 
 // Initialize OpenAI client
@@ -11,6 +12,65 @@ const openai = new OpenAI({
 
 // Maximum number of previous messages to include for context
 const MAX_CONTEXT_MESSAGES = 10;
+
+// Webhook payload validation schema with comprehensive types
+const WhatsAppMessageSchema = z.object({
+  object: z.string(),
+  entry: z.array(
+    z.object({
+      id: z.string(),
+      changes: z.array(
+        z.object({
+          value: z.object({
+            messaging_product: z.string(),
+            metadata: z.object({
+              display_phone_number: z.string(),
+              phone_number_id: z.string(),
+            }),
+            contacts: z.array(
+              z.object({
+                profile: z.object({
+                  name: z.string(),
+                }),
+                wa_id: z.string(),
+              })
+            ).nonempty(),
+            messages: z.array(
+              z.object({
+                from: z.string(),
+                id: z.string(),
+                timestamp: z.string(),
+                type: z.string(),
+                text: z
+                  .object({
+                    body: z.string(),
+                  })
+                  .optional(),
+                image: z
+                  .object({
+                    mime_type: z.string(),
+                    sha256: z.string(),
+                    id: z.string(),
+                  })
+                  .optional(),
+                location: z
+                  .object({
+                    latitude: z.number(),
+                    longitude: z.number(),
+                  })
+                  .optional(),
+                voice: z.object({}).optional(),
+              })
+            ).nonempty(),
+          }),
+        })
+      ).nonempty(),
+    })
+  ).nonempty(),
+});
+
+// Type inference from the schema
+type WhatsAppWebhook = z.infer<typeof WhatsAppMessageSchema>;
 
 // Verify WhatsApp webhook signature
 function verifySignature(payload: string, signature: string): boolean {
@@ -232,10 +292,29 @@ export async function POST(request: Request) {
       return new NextResponse('Invalid signature', { status: 401 });
     }
 
-    // Parse webhook payload directly without Zod validation
-    const payload = JSON.parse(body);
-    const message = payload.entry[0].changes[0].value.messages[0];
-    const sender = payload.entry[0].changes[0].value.contacts[0];
+    // Parse and validate webhook payload using Zod's safeParse
+    const parsedPayload = WhatsAppMessageSchema.safeParse(JSON.parse(body));
+
+    if (!parsedPayload.success) {
+      console.error('Invalid webhook payload:', parsedPayload.error);
+      // Return 200 to prevent retries, but log the error
+      return new NextResponse('OK', { status: 200 });
+    }
+
+    const payload = parsedPayload.data;
+    
+    // Safely access nested properties
+    const firstEntry = payload.entry[0];
+    const firstChange = firstEntry?.changes[0];
+    const value = firstChange?.value;
+    
+    if (!value?.messages?.[0] || !value?.contacts?.[0]) {
+      console.error('Missing required message or contact data');
+      return new NextResponse('OK', { status: 200 });
+    }
+
+    const message = value.messages[0];
+    const sender = value.contacts[0];
 
     // Handle voice messages
     if (message.type === 'voice') {
@@ -251,15 +330,15 @@ export async function POST(request: Request) {
     let imageUrl: string | undefined;
     let location: { lat: number; lng: number } | undefined;
 
-    if (message.text) {
+    if (message.text?.body) {
       messageContent = message.text.body;
     }
 
     if (message.image) {
       const mediaUrl = await getMediaUrl(message.image.id);
-      console.log('mediaUrl', mediaUrl);
+      console.log('mediaUrl:', mediaUrl);
       imageUrl = await downloadMedia(mediaUrl);
-      console.log('imageUrl', imageUrl);
+      console.log('imageUrl:', imageUrl);
       messageContent += ` [Image uploaded: ${imageUrl}]`;
     }
 
@@ -273,7 +352,7 @@ export async function POST(request: Request) {
 
     // Get conversation history
     const conversationHistory = await getConversationHistory(sender.wa_id);
-    console.log('conversationHistory', conversationHistory);
+    console.log('conversationHistory:', conversationHistory);
 
     // Process message with OpenAI
     const completion = await openai.chat.completions.create({
@@ -346,6 +425,7 @@ export async function POST(request: Request) {
     return new NextResponse('OK', { status: 200 });
   } catch (error) {
     console.error('Webhook error:', error);
-    return new NextResponse('Internal server error', { status: 500 });
+    // Always return 200 to prevent retries
+    return new NextResponse('OK', { status: 200 });
   }
 }
