@@ -271,6 +271,7 @@ export async function POST(request: Request) {
 
     // Get conversation history
     const conversationHistory = await getConversationHistory(sender.wa_id);
+    console.log('conversationHistory', conversationHistory)
 
     // Process message with OpenAI
     const completion = await openai.chat.completions.create({
