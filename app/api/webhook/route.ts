@@ -368,7 +368,8 @@ export async function POST(request: Request) {
 5. Keep responses concise and clear
 6. If the user sends an image, acknowledge it
 7. If the user sends a location, acknowledge it
-8. If information is missing, ask for it specifically`
+8. If information is missing, ask for it specifically
+9. Respond in the same language the user used to start the conversation`
         },
         ...conversationHistory,
         {
