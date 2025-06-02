@@ -364,7 +364,8 @@ export async function POST(request: Request) {
 7. If the user sends a location, acknowledge it
 8. If information is missing, ask for it specifically
 9. Respond in the same language the user used to start the conversation
-10. If you receive a [VOICE_MESSAGE], respond with a polite message in the user's language explaining that voice messages cannot be processed and requesting text, images, or location instead`
+10. If you receive a [VOICE_MESSAGE], respond with a polite message in the user's language explaining that voice messages cannot be processed and requesting text, images, or location instead
+11. After creating a report, provide a friendly confirmation message in the user's language, thanking them and explaining that help is on the way`
         },
         ...conversationHistory,
         {
@@ -390,11 +391,34 @@ export async function POST(request: Request) {
             args.imageUrl
           );
 
-          if (report) {
-            responseToUser = "Thank you for reporting! We've recorded the information and will help the animal as soon as possible.";
-          } else {
-            responseToUser = "I'm sorry, but there was an error creating the report. Please try again.";
-          }
+          // Make a second OpenAI call to generate a contextual response
+          const followUpCompletion = await openai.chat.completions.create({
+            model: "gpt-4-turbo-preview",
+            messages: [
+              {
+                role: "system",
+                content: `You are an AI assistant helping users report animals in need. Generate a friendly response to confirm their report has been created. The response should:
+1. Be in the same language as the user's original message
+2. Thank them for their help
+3. Confirm that their report has been received
+4. Assure them that help will be coordinated
+5. Keep the message concise and empathetic`
+              },
+              ...conversationHistory,
+              {
+                role: "user",
+                content: messageContent
+              },
+              aiResponse,
+              {
+                role: "function",
+                name: "create_report",
+                content: report ? JSON.stringify(report) : "error"
+              }
+            ]
+          });
+
+          responseToUser = followUpCompletion.choices[0].message.content || '';
         }
       }
     }
