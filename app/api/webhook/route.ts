@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import { headers } from 'next/headers';
 import { createHmac, timingSafeEqual } from 'crypto';
 import OpenAI from 'openai';
-import { z } from 'zod';
 import { supabase } from '@/lib/supabase';
 
 // Initialize OpenAI client
@@ -12,48 +11,6 @@ const openai = new OpenAI({
 
 // Maximum number of previous messages to include for context
 const MAX_CONTEXT_MESSAGES = 10;
-
-// Webhook payload validation schema
-const WhatsAppMessageSchema = z.object({
-  object: z.string(),
-  entry: z.array(z.object({
-    id: z.string(),
-    changes: z.array(z.object({
-      value: z.object({
-        messaging_product: z.string(),
-        metadata: z.object({
-          display_phone_number: z.string(),
-          phone_number_id: z.string(),
-        }),
-        contacts: z.array(z.object({
-          profile: z.object({
-            name: z.string(),
-          }),
-          wa_id: z.string(),
-        })),
-        messages: z.array(z.object({
-          from: z.string(),
-          id: z.string(),
-          timestamp: z.string(),
-          text: z.object({
-            body: z.string(),
-          }).optional(),
-          type: z.string(),
-          image: z.object({
-            mime_type: z.string(),
-            sha256: z.string(),
-            id: z.string(),
-          }).optional(),
-          location: z.object({
-            latitude: z.number(),
-            longitude: z.number(),
-          }).optional(),
-          voice: z.object({}).optional(),
-        })),
-      }),
-    })),
-  })),
-});
 
 // Verify WhatsApp webhook signature
 function verifySignature(payload: string, signature: string): boolean {
@@ -267,13 +224,14 @@ export async function POST(request: Request) {
     }
 
     const body = await request.text();
+    console.log('Incoming webhook payload:', body);
 
     if (!verifySignature(body, signature)) {
       return new NextResponse('Invalid signature', { status: 401 });
     }
 
-    // Parse and validate webhook payload
-    const payload = WhatsAppMessageSchema.parse(JSON.parse(body));
+    // Parse webhook payload directly without Zod validation
+    const payload = JSON.parse(body);
     const message = payload.entry[0].changes[0].value.messages[0];
     const sender = payload.entry[0].changes[0].value.contacts[0];
 
@@ -295,17 +253,13 @@ export async function POST(request: Request) {
       messageContent = message.text.body;
     }
 
-    console.log('message.image', message.image)
-
     if (message.image) {
       const mediaUrl = await getMediaUrl(message.image.id);
-      console.log('mediaUrl', mediaUrl)
+      console.log('mediaUrl', mediaUrl);
       imageUrl = await downloadMedia(mediaUrl);
-      console.log('imageUrl', imageUrl)
+      console.log('imageUrl', imageUrl);
       messageContent += ` [Image uploaded: ${imageUrl}]`;
     }
-
-    console.log('message.image procesado')
 
     if (message.location) {
       location = {
