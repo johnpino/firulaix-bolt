@@ -14,9 +14,9 @@ const Map = dynamic(
 
 export default function Home() {
   return (
-    <main className="flex min-h-screen flex-col">
+    <main className="grid min-h-screen grid-rows-[auto_1fr_auto]">
       <Navbar />
-      <div className="flex-1 mt-16 basis-0">
+      <div className="h-full">
         <Map />
       </div>
       <Footer />
