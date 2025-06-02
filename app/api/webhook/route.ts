@@ -316,21 +316,15 @@ export async function POST(request: Request) {
     const message = value.messages[0];
     const sender = value.contacts[0];
 
-    // Handle voice messages
-    if (message.type === 'voice') {
-      await sendWhatsAppMessage(
-        sender.wa_id,
-        "I'm sorry, but I can't process voice messages at the moment. Please send text, images, or location instead."
-      );
-      return new NextResponse('OK', { status: 200 });
-    }
-
     // Extract message content and media
     let messageContent = '';
     let imageUrl: string | undefined;
     let location: { lat: number; lng: number } | undefined;
 
-    if (message.text?.body) {
+    // Handle different message types
+    if (message.type === 'voice') {
+      messageContent = '[VOICE_MESSAGE]';
+    } else if (message.text?.body) {
       messageContent = message.text.body;
     }
 
@@ -369,7 +363,8 @@ export async function POST(request: Request) {
 6. If the user sends an image, acknowledge it
 7. If the user sends a location, acknowledge it
 8. If information is missing, ask for it specifically
-9. Respond in the same language the user used to start the conversation`
+9. Respond in the same language the user used to start the conversation
+10. If you receive a [VOICE_MESSAGE], respond with a polite message in the user's language explaining that voice messages cannot be processed and requesting text, images, or location instead`
         },
         ...conversationHistory,
         {
