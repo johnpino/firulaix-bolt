@@ -62,6 +62,25 @@ const WhatsAppMessageSchema = z.object({
                 voice: z.object({}).optional(),
               })
             ).optional(),
+            statuses: z.array(
+              z.object({
+                id: z.string(),
+                status: z.string(),
+                timestamp: z.string(),
+                recipient_id: z.string(),
+                conversation: z.object({
+                  id: z.string(),
+                  origin: z.object({
+                    type: z.string(),
+                  }),
+                }),
+                pricing: z.object({
+                  billable: z.boolean(),
+                  pricing_model: z.string(),
+                  category: z.string(),
+                }),
+              })
+            ).optional(),
           }),
         })
       ).nonempty(),
@@ -308,8 +327,15 @@ export async function POST(request: Request) {
     const firstChange = firstEntry?.changes[0];
     const value = firstChange?.value;
     
+    // Handle status updates
+    if (value?.statuses) {
+      console.log('Received status update:', value.statuses[0]);
+      return new NextResponse('OK', { status: 200 });
+    }
+
+    // Handle messages
     if (!value?.messages?.[0] || !value?.contacts?.[0]) {
-      console.error('Missing required message or contact data');
+      console.log('No message or contact data to process');
       return new NextResponse('OK', { status: 200 });
     }
 
