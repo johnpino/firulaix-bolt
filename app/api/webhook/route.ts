@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { headers } from 'next/headers';
-import { createHmac, timingSafeEqual } from 'crypto';
+import { createHmac, timingSafeEqual, randomBytes } from 'crypto';
 import OpenAI from 'openai';
 import { supabase } from '@/lib/supabase';
 
@@ -91,8 +91,10 @@ async function downloadMedia(url: string): Promise<string> {
 
   // Upload to Supabase Storage and get public URL
   const buffer = await response.arrayBuffer();
-  const fileName = `${Date.now()}.jpg`; // Improve fileName to avoid name clashing
-  console.log('fileName', fileName) 
+  const uniqueId = randomBytes(8).toString('hex');
+  const fileName = `${Date.now()}-${uniqueId}.jpg`;
+  console.log('Uploading file:', fileName);
+  
   const { data, error } = await supabase.storage
     .from('animal-images')
     .upload(fileName, buffer, {
@@ -271,7 +273,7 @@ export async function POST(request: Request) {
 
     // Get conversation history
     const conversationHistory = await getConversationHistory(sender.wa_id);
-    console.log('conversationHistory', conversationHistory)
+    console.log('conversationHistory', conversationHistory);
 
     // Process message with OpenAI
     const completion = await openai.chat.completions.create({
